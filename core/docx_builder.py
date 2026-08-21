@@ -104,6 +104,40 @@ def _looks_like_schema_example(row_norm) -> bool:
     return compact in examples
 
 
+def _classification_label(row) -> tuple[str | None, str | None]:
+    if not row:
+        return None, None
+    text = str(row[0]).strip()
+    match = re.match(r"^([A-D])(?:[.\s]|$)", text)
+    if not match:
+        return None, text or None
+    code = match.group(1)
+    return code, text
+
+
+def _count_candidate_rows(rows):
+    converted = []
+    for row in rows or []:
+        values = list(row) if isinstance(row, (list, tuple)) else [row]
+        if len(values) >= 2:
+            values[1] = _as_candidate_range(values[1])
+        converted.append(values)
+    return converted
+
+
+def _as_candidate_range(value) -> str:
+    text = str(value or "").strip()
+    if "~" in text or "범위" in text:
+        return text
+    match = re.search(r"(\d[\d,]*)", text)
+    if not match:
+        return text
+    number = int(match.group(1).replace(",", ""))
+    low = max(1, round(number * 0.8))
+    high = max(low, round(number * 1.2))
+    return f"약 {low:,}~{high:,}건(E, 후보)"
+
+
 def _shade(cell, fill_hex):
     tcPr = cell._tc.get_or_add_tcPr()
     shd = OxmlElement('w:shd')
@@ -329,7 +363,7 @@ def build_report_docx(tech_name, purpose, scenario_label, date_str, chapter_resu
     b.image(chart_images["chart6_positioning"], 13, "[Chart 6] 주요 기업 포지셔닝 후보 맵 (E)")
 
     b.h1("Ⅲ. 특허 정량 분석")
-    b.h2("1. 분석 개요"); b.body(ch3["overview"]); b.table(["기술 분류", "추정 특허 건수"], ch3["counts"], [1, 2])
+    b.h2("1. 분석 개요"); b.body(ch3["overview"]); b.table(["기술 분류", "특허 건수 후보 범위"], _count_candidate_rows(ch3["counts"]), [1, 2])
     strategy = ch3.get("patent_search_strategy", {})
     if strategy:
         if strategy.get("verification_note"):
@@ -342,8 +376,8 @@ def build_report_docx(tech_name, purpose, scenario_label, date_str, chapter_resu
             b.table(["코드", "선정근거"], strategy["ipc_cpc_candidates"], [0.8, 4])
     b.h2("2. 전체 출원 동향")
     b.image(chart_images["chart4_country"], 15.5, "[Chart 4] 국가별 연도별 특허 출원 후보 추이 및 누적 비중 (E)")
-    b.h2("3. 주요 출원인 현황")
-    b.table(["출원인", "건수 동향", "주요 국가", "핵심 기술 영역"], ch3["applicants"], [1, 1, 1, 2])
+    b.h2("3. 주요 출원인 후보 현황")
+    b.table(["출원인 후보", "건수 동향 후보", "주요 국가", "핵심 기술 영역"], ch3["applicants"], [1, 1, 1, 2])
     b.h2("4. 주요 IPC 분류 동향"); b.table(["IPC 코드", "의미"], ch3["ipc"], [1, 3])
 
     b.h1("Ⅳ. 핵심 기술 개요")
@@ -351,14 +385,15 @@ def build_report_docx(tech_name, purpose, scenario_label, date_str, chapter_resu
 
     b.h1("Ⅴ. 주요 R&D 동향 분석")
     b.h2("1. R&D 분석 개요")
-    b.image(chart_images["chart1_trend"], 15.5, "[Chart 1] 기술 영역별 연도별 논문 건수 추이 (E)")
+    b.image(chart_images["chart1_trend"], 15.5, "[Chart 1] 기술 영역별 연도별 논문 건수 후보 추이 (E)")
     for t in ch5["trends"]:
         b.bullet(t)
     b.h2("2. 기술 영역별 R&D 동향")
     classification_labels = {}
     for row in ch1["classification_desc"]:
-        code = row[0].split(".")[0].strip()
-        classification_labels[code] = row[0]
+        code, label = _classification_label(row)
+        if code and label:
+            classification_labels[code] = label
     for key in ["A", "B", "C", "D"]:
         if key in ch5["by_area"]:
             b.h3(classification_labels.get(key, key)); b.body(ch5["by_area"][key])
@@ -374,9 +409,9 @@ def build_report_docx(tech_name, purpose, scenario_label, date_str, chapter_resu
     b.table(["기술 분류", "성장 단계", "R&D 성장도", "시사점"], ch6["stages"], [1.2, 1.2, 1, 2.6])
     b.h2("종합 판단"); b.body(ch6["overall"])
 
-    b.h1("Ⅶ. 주요 출원인 IP 히스토리 분석")
-    b.h2("1. 상위 출원인 IP 히스토리")
-    b.table(["출원인", "시기별 핵심 출원 영역 변화(E)", "R&D-특허 전환 패턴"], ch7["history"], [1, 3.2, 2])
+    b.h1("Ⅶ. 주요 출원인 후보 IP 히스토리 분석")
+    b.h2("1. 상위 출원인 후보 IP 히스토리")
+    b.table(["출원인 후보", "시기별 핵심 출원 영역 변화 후보(E)", "R&D-특허 전환 패턴"], ch7["history"], [1, 3.2, 2])
     b.h2("2. 의뢰 기관 보유 IP 현황 및 평가"); b.body(ch7["own_ip_note"])
 
     b.h1("Ⅷ. 공백기술 도출 및 IP 포트폴리오 전략")
