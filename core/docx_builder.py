@@ -40,6 +40,7 @@ def _font(run, name=KOPUB_MEDIUM, size=10.5, italic=False, color=None):
 
 
 _SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+(?=[가-힣A-Za-z0-9])')
+_URL_RE = re.compile(r"https?://[^\s]+")
 
 
 def _split_paragraphs(text: str, sentences_per_para: int = 2) -> list:
@@ -50,6 +51,57 @@ def _split_paragraphs(text: str, sentences_per_para: int = 2) -> list:
         " ".join(sentences[i:i + sentences_per_para])
         for i in range(0, len(sentences), sentences_per_para)
     ]
+
+
+def _normalize_cell(value) -> str:
+    return re.sub(r"\s+", "", str(value or "")).lower()
+
+
+def _shorten_cell(value, limit: int = 220) -> str:
+    text = str(value or "").replace("\n", " ").strip()
+    text = re.sub(r"\s+", " ", text)
+    text = _URL_RE.sub(lambda m: _shorten_url(m.group(0)), text)
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _shorten_url(url: str) -> str:
+    body = url.split("://", 1)[-1]
+    domain = body.split("/", 1)[0]
+    return f"{domain}/..."
+
+
+def _clean_rows(headers, rows):
+    cleaned = []
+    header_norm = [_normalize_cell(h) for h in headers]
+    for row in rows or []:
+        values = list(row) if isinstance(row, (list, tuple)) else [row]
+        values = values[:len(headers)] + [""] * max(0, len(headers) - len(values))
+        row_norm = [_normalize_cell(v) for v in values]
+        if row_norm == header_norm:
+            continue
+        if _looks_like_schema_example(row_norm):
+            continue
+        cleaned.append([_shorten_cell(v) for v in values])
+    return cleaned
+
+
+def _looks_like_schema_example(row_norm) -> bool:
+    examples = {
+        ("유형", "매체", "성과"),
+        ("분류", "단계", "r&d성장도", "시사점"),
+        ("분류", "단계", "rd성장도", "시사점"),
+        ("출원인", "시기별변화", "전환패턴"),
+        ("지표", "설명"),
+        ("분류", "범위"),
+        ("국가", "정책동향"),
+        ("기업명", "역할", "동향"),
+        ("영역", "r&d성장", "특허성숙", "전략"),
+        ("영역", "rd성장", "특허성숙", "전략"),
+    }
+    compact = tuple(row_norm)
+    return compact in examples
 
 
 def _shade(cell, fill_hex):
@@ -124,7 +176,7 @@ class DocxBuilder:
     def h1(self, text, page_break=True):
         if page_break:
             self.doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-        p = self.doc.add_paragraph()
+        p = self.doc.add_paragraph(style="Heading 1")
         p.paragraph_format.space_before = Pt(6); p.paragraph_format.space_after = Pt(12)
         pPr = p._p.get_or_add_pPr()
         pBdr = OxmlElement('w:pBdr'); bottom = OxmlElement('w:bottom')
@@ -134,12 +186,12 @@ class DocxBuilder:
         _font(p.add_run(text), name=KOPUB_BOLD, size=16, color=PRIMARY)
 
     def h2(self, text):
-        p = self.doc.add_paragraph()
+        p = self.doc.add_paragraph(style="Heading 2")
         p.paragraph_format.space_before = Pt(14); p.paragraph_format.space_after = Pt(8)
         _font(p.add_run(text), name=KOPUB_BOLD, size=13, color=SECONDARY)
 
     def h3(self, text):
-        p = self.doc.add_paragraph()
+        p = self.doc.add_paragraph(style="Heading 3")
         p.paragraph_format.space_before = Pt(10); p.paragraph_format.space_after = Pt(6)
         _font(p.add_run(text), name=KOPUB_MEDIUM, size=11, color="333333")
 
@@ -155,6 +207,7 @@ class DocxBuilder:
         _font(p.add_run(text), name=KOPUB_MEDIUM, size=10.5)
 
     def table(self, headers, rows, ratios):
+        rows = _clean_rows(headers, rows)
         total = sum(ratios)
         widths = [round(r / total * TABLE_WIDTH) for r in ratios]
         widths[-1] += TABLE_WIDTH - sum(widths)
@@ -240,16 +293,20 @@ def build_report_docx(tech_name, purpose, scenario_label, date_str, chapter_resu
             f"현재 입력 근거 등급은 {input_basis.get('grade', 'D')}입니다. "
             f"{input_basis.get('reason', '')}"
         )
+        b.note(
+            "이 장의 검색 링크와 출처명은 검증을 위한 경로이며, 원문 수치나 검색결과를 직접 집계한 확정 근거가 아니다. "
+            "외부 제출용으로 사용할 때는 검색일, 검색식, 원자료 파일, 원문 출처를 별도로 남겨야 한다."
+        )
         b.h2("1. 근거 등급 기준")
         b.table(["등급", "의미", "적용 조건"], research_plan.get("evidence_grades", []), [0.7, 2, 3.4])
         b.h2("2. 특허 무료 검색/검증 링크")
         patent_rows = _rows_from_links(research_plan.get("patent_search_links"))
         if patent_rows:
-            b.table(["검색원", "용도", "검색식", "등급", "링크"], patent_rows, [0.9, 1.4, 2.3, 0.6, 2.8])
+            b.table(["검색원", "용도", "검색식", "등급", "링크(축약)"], patent_rows, [0.9, 1.5, 2.5, 0.6, 1.8])
         b.h2("3. 논문·시장 공개자료 검색 링크")
         public_rows = _rows_from_links(research_plan.get("scholar_search_links")) + _rows_from_links(research_plan.get("market_search_links"))
         if public_rows:
-            b.table(["검색원", "용도", "검색식", "등급", "링크"], public_rows, [0.9, 1.4, 2.3, 0.6, 2.8])
+            b.table(["검색원", "용도", "검색식", "등급", "링크(축약)"], public_rows, [0.9, 1.5, 2.5, 0.6, 1.8])
         b.note("무료 공개 검색 기반 수치는 실제 검색일, 검색식, 다운로드 파일 유무에 따라 신뢰도가 달라진다. 외부 제출 전에는 검색결과 파일 또는 원문 출처로 재검증해야 한다.")
 
     b.h1("Ⅰ. 기술 개요 및 배경", page_break=True)
@@ -267,9 +324,9 @@ def build_report_docx(tech_name, purpose, scenario_label, date_str, chapter_resu
         b.h2("3-1. 시장자료 출처 후보 및 검증 수준")
         b.table(["출처/검색경로", "확인할 항목", "근거등급", "비고"], ch2["market_sources"], [1.4, 1.5, 0.7, 2.4])
     b.h2("4. 시장 규모 전망 출처별 비교")
-    b.image(chart_images["chart5_market"], 14.5, "[Chart 5] 출처별 시장 규모·CAGR 전망 비교 (E)")
+    b.image(chart_images["chart5_market"], 14.5, "[Chart 5] 출처별 시장 규모·CAGR 후보 비교 (E, 차트용 대표값)")
     b.h2("5. 주요 기업 포지셔닝 맵")
-    b.image(chart_images["chart6_positioning"], 13, "[Chart 6] 주요 기업 포지셔닝 맵 (E)")
+    b.image(chart_images["chart6_positioning"], 13, "[Chart 6] 주요 기업 포지셔닝 후보 맵 (E)")
 
     b.h1("Ⅲ. 특허 정량 분석")
     b.h2("1. 분석 개요"); b.body(ch3["overview"]); b.table(["기술 분류", "추정 특허 건수"], ch3["counts"], [1, 2])
@@ -279,12 +336,12 @@ def build_report_docx(tech_name, purpose, scenario_label, date_str, chapter_resu
             b.note(strategy["verification_note"])
         if strategy.get("search_queries"):
             b.h2("1-1. 특허 검색식 및 검증 링크")
-            b.table(["검색원", "검색식", "검증링크", "근거등급"], strategy["search_queries"], [1, 2.3, 2.4, 0.8])
+            b.table(["검색원", "검색식", "검증링크(축약)", "근거등급"], strategy["search_queries"], [1, 2.8, 1.8, 0.8])
         if strategy.get("ipc_cpc_candidates"):
             b.h2("1-2. IPC/CPC 후보")
             b.table(["코드", "선정근거"], strategy["ipc_cpc_candidates"], [0.8, 4])
     b.h2("2. 전체 출원 동향")
-    b.image(chart_images["chart4_country"], 15.5, "[Chart 4] 국가별 연도별 특허 출원 추이 및 누적 비중 (E)")
+    b.image(chart_images["chart4_country"], 15.5, "[Chart 4] 국가별 연도별 특허 출원 후보 추이 및 누적 비중 (E)")
     b.h2("3. 주요 출원인 현황")
     b.table(["출원인", "건수 동향", "주요 국가", "핵심 기술 영역"], ch3["applicants"], [1, 1, 1, 2])
     b.h2("4. 주요 IPC 분류 동향"); b.table(["IPC 코드", "의미"], ch3["ipc"], [1, 3])
@@ -308,9 +365,9 @@ def build_report_docx(tech_name, purpose, scenario_label, date_str, chapter_resu
     b.h2("주요 연구 그룹 및 성과")
     b.table(["연구 그룹 유형(E)", "발표 매체", "핵심 성과 영역"], ch5["research_groups"], [1.6, 1.4, 2.4])
     b.h2("3. 핵심 키워드 트렌드")
-    b.image(chart_images["chart2_keywords"], 15, "[Chart 2] 핵심 키워드 출현 빈도 비교 (E)")
+    b.image(chart_images["chart2_keywords"], 15, "[Chart 2] 핵심 키워드 출현 빈도 후보 비교 (E)")
     b.h2("4. R&D-특허 종합 교차 분석")
-    b.image(chart_images["chart3_matrix"], 13, "[Chart 3] R&D-특허 포지셔닝 매트릭스 (E)")
+    b.image(chart_images["chart3_matrix"], 13, "[Chart 3] R&D-특허 포지셔닝 후보 매트릭스 (E)")
     b.table(["기술 영역", "R&D 성장도", "특허 성숙도", "권장 전략"], ch5["cross_analysis"], [1.2, 1, 1, 2.6])
 
     b.h1("Ⅵ. 기술 성장 단계 분석")
