@@ -65,7 +65,7 @@ def chart1_trend(data: dict) -> io.BytesIO:
     for i, (name, values) in enumerate(data["areas"].items()):
         ax.plot(years, values, marker='o', linewidth=2.2, color=COLORS[i % len(COLORS)], label=name)
     _style_axes(ax)
-    ax.set_title('기술 영역별 연도별 논문 건수 추이 (E)', fontproperties=fp)
+    ax.set_title('기술 영역별 연도별 논문 건수 후보 추이 (E)', fontproperties=fp)
     ax.set_xticks(years)
     for lbl in ax.get_xticklabels() + ax.get_yticklabels():
         lbl.set_fontproperties(fp_s)
@@ -84,7 +84,7 @@ def chart2_keywords(data: dict) -> io.BytesIO:
     ax.bar(x - width / 2, data["period_a"], width, color=COLORS[0], label='이전 기간')
     ax.bar(x + width / 2, data["period_b"], width, color=COLORS[4], label='최근 기간(E)')
     _style_axes(ax)
-    ax.set_title('핵심 키워드 출현 빈도 비교 (E)', fontproperties=fp)
+    ax.set_title('핵심 키워드 출현 빈도 후보 비교 (E)', fontproperties=fp)
     ax.set_xticks(x)
     ax.set_xticklabels(data["keywords"], fontproperties=fp_s)
     for lbl in ax.get_yticklabels():
@@ -109,7 +109,7 @@ def chart3_matrix(data: dict) -> io.BytesIO:
     ax.set_xlim(0, 100); ax.set_ylim(0, 100)
     ax.set_xlabel('특허 성숙도 (지수)', fontproperties=fp)
     ax.set_ylabel('R&D 성장도 (지수)', fontproperties=fp)
-    ax.set_title('R&D-특허 포지셔닝 매트릭스 (E)', fontproperties=fp)
+    ax.set_title('R&D-특허 포지셔닝 후보 매트릭스 (E)', fontproperties=fp)
     for lbl in ax.get_xticklabels() + ax.get_yticklabels():
         lbl.set_fontproperties(fp_s)
     return _to_buffer(fig)
@@ -124,7 +124,7 @@ def chart4_country(data: dict) -> io.BytesIO:
     for i, (country, values) in enumerate(data["countries"].items()):
         ax.plot(data["years"], values, marker='o', linewidth=2, color=COLORS[i % len(COLORS)], label=country)
     _style_axes(ax)
-    ax.set_title('국가별 연도별 특허 출원 추이 (E)', fontproperties=fp)
+    ax.set_title('국가별 연도별 특허 출원 후보 추이 (E)', fontproperties=fp)
     for lbl in ax.get_xticklabels() + ax.get_yticklabels():
         lbl.set_fontproperties(fp_s)
     ax.legend(prop=fp_s, frameon=False, ncol=2)
@@ -136,7 +136,7 @@ def chart4_country(data: dict) -> io.BytesIO:
     for i, v in enumerate(vals):
         ax2.text(v + 0.5, i, f'{v}%', va='center', fontproperties=fp_s)
     _style_axes(ax2)
-    ax2.set_title('누적 출원 비중 (E)', fontproperties=fp)
+    ax2.set_title('누적 출원 후보 비중 (E)', fontproperties=fp)
     for lbl in ax2.get_yticklabels() + ax2.get_xticklabels():
         lbl.set_fontproperties(fp_s)
     fig.tight_layout()
@@ -150,7 +150,7 @@ def chart5_market(data: dict) -> io.BytesIO:
     import numpy as np
     y_pos = np.arange(len(data["sources"]))
     fig, ax1 = plt.subplots(figsize=(9, 5.2))
-    ax1.barh(y_pos, data["size_2030"], color=COLORS[0], alpha=0.85, label='시장규모 전망')
+    ax1.barh(y_pos, data["size_2030"], color=COLORS[0], alpha=0.85, label='시장규모 후보')
     ax1.set_yticks(y_pos); ax1.set_yticklabels(data["sources"], fontproperties=fp_s)
     for lbl in ax1.get_xticklabels():
         lbl.set_fontproperties(fp_s)
@@ -162,7 +162,7 @@ def chart5_market(data: dict) -> io.BytesIO:
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, prop=fp_s, loc='lower right', frameon=False)
-    ax1.set_title('출처별 시장 규모·CAGR 전망 비교 (E)', fontproperties=fp, pad=40)
+    ax1.set_title('출처별 시장 규모·CAGR 후보 비교 (E)', fontproperties=fp, pad=40)
     fig.tight_layout()
     return _to_buffer(fig)
 
@@ -182,7 +182,7 @@ def chart6_positioning(data: dict) -> io.BytesIO:
     ax.set_xlim(0, 100); ax.set_ylim(0, 100)
     ax.set_xlabel('소재·소자 중심 ↔ 시스템·플랫폼 중심', fontproperties=fp)
     ax.set_ylabel('부품 공급 ↔ 완제품·플랫폼 리더', fontproperties=fp)
-    ax.set_title('주요 기업 포지셔닝 맵 (E)', fontproperties=fp)
+    ax.set_title('주요 기업 포지셔닝 후보 맵 (E)', fontproperties=fp)
     for lbl in ax.get_xticklabels() + ax.get_yticklabels():
         lbl.set_fontproperties(fp_s)
     return _to_buffer(fig)
