@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-기술동향 분석 보고서 자동생성 — Streamlit 위저드 UI
-GUIDE_v2.1 STEP1~8을 위저드 화면 흐름으로 구현한다.
+기술동향 분석 보고서 자동생성 — Streamlit 원클릭 UI
+기술명 입력 후 시나리오 판별, 기술 분류, 챕터 생성, 차트 생성, Word 조립을 자동 진행한다.
 """
 import streamlit as st
 import config
@@ -29,36 +29,16 @@ if is_mock_mode():
         icon="⚠️",
     )
 
-st.progress(
-    {"input": 0.15, "confirm": 0.35, "generate": 0.5}.get(st.session_state.step, 0.0)
-)
+st.progress({"input": 0.15, "generate": 0.5}.get(st.session_state.step, 0.0))
 
 # =================================================================
-# STEP 1~3: 입력 화면
+# 입력 화면: 기술명 입력 후 즉시 보고서 생성
 # =================================================================
 if st.session_state.step == "input":
-    st.subheader("STEP 1~3. 기본 정보 입력")
+    st.subheader("보고서 바로 생성")
 
     with st.form("input_form"):
         tech_name = st.text_input("기술명 *", placeholder="예: HBM (High Bandwidth Memory)")
-
-        st.markdown("**의뢰 기관 정보 (선택)** — 없으면 시나리오 A로 진행됩니다")
-        org_name = st.text_input("의뢰 기관명", placeholder="예: OO대학교 산학협력단")
-
-        has_capability = st.radio(
-            "의뢰 기관의 보유 역량/사업 영역 정보가 있나요?",
-            options=[False, True],
-            format_func=lambda v: "있음" if v else "없음",
-            horizontal=True,
-            help="모호한 입력을 방지하기 위해 명시적으로 선택하도록 구성했습니다 "
-                 "(Call 1 설계 검토에서 발견된 이슈 반영).",
-        )
-        org_capability = ""
-        if has_capability:
-            org_capability = st.text_area(
-                "보유 역량/사업 영역 요약",
-                placeholder="예: 광섬유 피복 소재 제조 역량 보유",
-            )
 
         uploaded_files = st.file_uploader(
             "첨부파일 (특허 CSV/Excel, 논문 Excel, 특허 명세서 PDF 등)",
@@ -72,10 +52,19 @@ if st.session_state.step == "input":
         if purpose == "직접 입력":
             purpose = st.text_input("분석 목적 직접 입력", value="")
 
-        submitted = st.form_submit_button("다음 단계 (시나리오 판별)", width='stretch')
+        with st.expander("고급 옵션: 의뢰 기관 정보 입력", expanded=False):
+            st.caption("비워두면 기업 무관 범용 보고서(시나리오 A)로 자동 생성됩니다.")
+            org_name = st.text_input("의뢰 기관명", placeholder="예: OO대학교 산학협력단")
+            org_capability = st.text_area(
+                "보유 역량/사업 영역 요약",
+                placeholder="예: 광섬유 피복 소재 제조 역량 보유",
+            )
+
+        submitted = st.form_submit_button("보고서 바로 생성", type="primary", width='stretch')
 
     if submitted:
         attachment_summary = build_attachment_summary(uploaded_files)
+        has_capability = bool(org_capability.strip())
         st.session_state.inputs = dict(
             tech_name=tech_name.strip(),
             org_name=org_name.strip() or None,
@@ -95,53 +84,16 @@ if st.session_state.step == "input":
         if result["status"] == "missing_tech_name":
             st.error(result["confirmation_message"])
         else:
-            st.session_state.step = "confirm"
-            st.rerun()
-
-# =================================================================
-# 확인 화면: 시나리오 + 기술분류 확정 (GUIDE 섹션 7 — 한 번만 확인)
-# =================================================================
-elif st.session_state.step == "confirm":
-    st.subheader("시나리오 및 기술 분류 확인")
-    result = st.session_state.call1_result
-
-    if result.get("mock"):
-        st.info("MOCK 응답입니다 — 실제 API 연결 전 화면 흐름 검증용입니다.", icon="🧪")
-
-    scenario = result["scenario"]
-    st.markdown(f"### {config.SCENARIO_LABELS.get(scenario, scenario)}")
-    st.caption(result["scenario_reason"])
-
-    st.markdown(f"**기술 분야 유형**: {result['field_type']}")
-
-    st.markdown("**기술 분류 체계 (A~D) — 필요 시 직접 수정 가능**")
-    edited = st.data_editor(
-        result["classification"],
-        column_config={
-            "code": st.column_config.TextColumn("분류", disabled=True),
-            "name": st.column_config.TextColumn("분류명"),
-            "scope": st.column_config.TextColumn("범위"),
-        },
-        hide_index=True,
-        width='stretch',
-    )
-
-    st.markdown("---")
-    st.write(result["confirmation_message"])
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("← 다시 입력", width='stretch'):
-            st.session_state.step = "input"
-            st.rerun()
-    with col2:
-        if st.button("이 방향으로 확정하고 다음 단계로 →", type="primary", width='stretch'):
-            st.session_state.confirmed_classification = edited
+            st.session_state.confirmed_classification = result["classification"]
+            st.session_state.chapter_results = None
+            st.session_state.docx_buffer = None
+            st.session_state.gen_error = None
+            st.session_state.auto_generate = True
             st.session_state.step = "generate"
             st.rerun()
 
 # =================================================================
-# STEP4~8: 챕터 생성 → 차트 → 문서 조립 → 다운로드 (한 번에 진행)
+# 생성 화면: 챕터 생성 → 차트 → 문서 조립 → 다운로드
 # =================================================================
 elif st.session_state.step == "generate":
     st.subheader("보고서 생성")
@@ -169,8 +121,10 @@ elif st.session_state.step == "generate":
         st.session_state.gen_error = None
 
     if st.session_state.docx_buffer is None:
-        st.info(f"확정된 시나리오: {config.SCENARIO_LABELS[confirmed_context['scenario']]}")
-        with st.expander("무료 공개자료 기반 조사 계획", expanded=False):
+        st.info(f"자동 적용 시나리오: {config.SCENARIO_LABELS[confirmed_context['scenario']]}")
+        with st.expander("자동 분류 및 무료 공개자료 기반 조사 계획", expanded=False):
+            st.markdown(f"**기술 분야 유형**: {st.session_state.call1_result.get('field_type')}")
+            st.dataframe(confirmed_context["classification"], width='stretch')
             plan = confirmed_context["research_plan"]
             st.write(plan["input_basis"])
             st.markdown("**특허 검증 링크**")
@@ -178,7 +132,11 @@ elif st.session_state.step == "generate":
             st.markdown("**논문/시장 검증 링크**")
             st.dataframe(plan["scholar_search_links"] + plan["market_search_links"], width='stretch')
 
-        if st.button("보고서 생성 시작", type="primary", width='stretch'):
+        should_generate = st.session_state.pop("auto_generate", False)
+        if not should_generate:
+            should_generate = st.button("보고서 다시 생성", type="primary", width='stretch')
+
+        if should_generate:
             st.session_state.gen_error = None
             progress_bar = st.progress(0.0)
             status_text = st.empty()
@@ -248,6 +206,7 @@ elif st.session_state.step == "generate":
                 st.json(st.session_state.chapter_results[call_id])
 
     if st.button("← 처음부터 다시"):
-        for k in ["step", "call1_result", "chapter_results", "docx_buffer", "gen_error"]:
+        for k in ["step", "call1_result", "confirmed_classification", "chapter_results",
+                  "docx_buffer", "gen_error", "auto_generate"]:
             st.session_state.pop(k, None)
         st.rerun()
