@@ -16,14 +16,14 @@ def build_research_plan(tech_name: str, classification=None, attachment_summary:
     class_terms = [t.strip() for t in class_terms if t and str(t).strip()]
 
     base_terms = [tech] + class_terms[:4]
-    query_ko = " ".join(t for t in base_terms if t) or tech
+    query_ko = _shorten(" ".join(t for t in base_terms if t) or tech, 160)
     query_en = tech
     if any(ord(ch) > 127 for ch in tech):
-        query_en = f"{tech} technology patent market research"
+        query_en = f"{tech} technology"
 
     patent_query = f'"{tech}" OR ({query_en})' if tech else query_en
-    paper_query = f'{tech} {query_en} research trend'
-    market_query = f'{tech} {query_en} market size CAGR policy company IR'
+    paper_query = _dedupe_terms(f'{tech} {query_en} research trend')
+    market_query = _dedupe_terms(f'{tech} {query_en} market size CAGR policy company IR')
 
     has_attachment = bool(attachment_summary and attachment_summary.strip())
     evidence_grade = "C" if has_attachment else "D"
@@ -123,3 +123,19 @@ def build_research_plan(tech_name: str, classification=None, attachment_summary:
             ["D", "AI 추정", "검증 데이터가 부족해 가설 수준으로만 사용"],
         ],
     }
+
+
+def _shorten(text: str, limit: int) -> str:
+    text = " ".join(str(text).split())
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _dedupe_terms(text: str) -> str:
+    words = str(text).split()
+    result = []
+    for word in words:
+        if word not in result:
+            result.append(word)
+    return " ".join(result)
