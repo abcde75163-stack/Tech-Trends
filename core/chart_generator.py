@@ -56,6 +56,23 @@ def _to_buffer(fig) -> io.BytesIO:
     return buf
 
 
+def _short_label(text, limit=14):
+    label = str(text or "")
+    if len(label) <= limit:
+        return label
+    return label[:limit].rstrip() + "..."
+
+
+def _scale_bubble_sizes(values, min_size=420, max_size=1250):
+    nums = [float(v or 0) for v in values]
+    if not nums:
+        return []
+    low, high = min(nums), max(nums)
+    if low == high:
+        return [(min_size + max_size) / 2 for _ in nums]
+    return [min_size + (v - low) / (high - low) * (max_size - min_size) for v in nums]
+
+
 def chart1_trend(data: dict) -> io.BytesIO:
     _require_keys(data, ["years", "areas"], "chart1_trend_data")
     fp, _ = _get_font_prop(13)
@@ -95,23 +112,41 @@ def chart2_keywords(data: dict) -> io.BytesIO:
 
 def chart3_matrix(data: dict) -> io.BytesIO:
     _require_keys(data, ["areas", "rd_growth", "patent_maturity", "size"], "chart3_matrix_data")
-    fp, _ = _get_font_prop(13)
-    fp_s, _ = _get_font_prop(9)
-    fig, ax = plt.subplots(figsize=(8.6, 6.2))
+    fp, _ = _get_font_prop(14)
+    fp_s, _ = _get_font_prop(10)
+    fig, ax = plt.subplots(figsize=(10.5, 7.4))
+    sizes = _scale_bubble_sizes(data["size"])
+    offsets = [(12, 12), (-12, 12), (12, -16), (-12, -16), (16, 0), (-16, 0)]
     for i, area in enumerate(data["areas"]):
-        ax.scatter(data["patent_maturity"][i], data["rd_growth"][i], s=data["size"][i],
-                   color=COLORS[i % len(COLORS)], alpha=0.55, edgecolors=COLORS[i % len(COLORS)], linewidths=1.5)
-        ax.annotate(area, (data["patent_maturity"][i], data["rd_growth"][i]), fontproperties=fp_s,
-                    ha='center', va='center')
+        x = data["patent_maturity"][i]
+        y = data["rd_growth"][i]
+        color = COLORS[i % len(COLORS)]
+        ax.scatter(x, y, s=sizes[i], color=color, alpha=0.38, edgecolors=color, linewidths=1.6)
+        ax.annotate(
+            _short_label(area),
+            (x, y),
+            xytext=offsets[i % len(offsets)],
+            textcoords='offset points',
+            fontproperties=fp_s,
+            ha='center',
+            va='center',
+            bbox=dict(boxstyle='round,pad=0.25', fc='white', ec=color, lw=0.8, alpha=0.92),
+            arrowprops=dict(arrowstyle='-', color=color, lw=0.8, alpha=0.75),
+        )
     ax.axvline(55, color='#BBBBBB', linewidth=1, linestyle='--')
     ax.axhline(55, color='#BBBBBB', linewidth=1, linestyle='--')
+    ax.text(8, 92, 'R&D 고성장 / 특허 저성숙', fontproperties=fp_s, color='#666666')
+    ax.text(62, 92, 'R&D 고성장 / 특허 고성숙', fontproperties=fp_s, color='#666666')
+    ax.text(8, 8, 'R&D 저성장 / 특허 저성숙', fontproperties=fp_s, color='#666666')
+    ax.text(62, 8, 'R&D 저성장 / 특허 고성숙', fontproperties=fp_s, color='#666666')
     _style_axes(ax)
-    ax.set_xlim(0, 100); ax.set_ylim(0, 100)
+    ax.set_xlim(-5, 105); ax.set_ylim(-5, 105)
     ax.set_xlabel('특허 성숙도 (지수)', fontproperties=fp)
     ax.set_ylabel('R&D 성장도 (지수)', fontproperties=fp)
     ax.set_title('R&D-특허 포지셔닝 후보 매트릭스 (E)', fontproperties=fp)
     for lbl in ax.get_xticklabels() + ax.get_yticklabels():
         lbl.set_fontproperties(fp_s)
+    fig.subplots_adjust(left=0.1, right=0.97, top=0.9, bottom=0.1)
     return _to_buffer(fig)
 
 
