@@ -79,7 +79,13 @@ def call_openai(system: str, user_message: str, model: str, max_tokens: int = 20
     active_model = get_model(model)
     fallback_model = get_fallback_model()
 
-    active_user_message = user_message
+    json_output_instruction = (
+        "\n\n<OUTPUT_FORMAT>\n"
+        "Return one complete JSON object only. Do not include markdown or text outside JSON.\n"
+        "</OUTPUT_FORMAT>"
+    )
+    base_user_message = user_message + json_output_instruction
+    active_user_message = base_user_message
     for attempt in range(DEFAULT_MAX_RETRIES):
         try:
             resp = client.responses.create(
@@ -98,7 +104,7 @@ def call_openai(system: str, user_message: str, model: str, max_tokens: int = 20
             if attempt == DEFAULT_MAX_RETRIES - 1:
                 raise
             active_user_message = (
-                f"{user_message}\n\n"
+                f"{base_user_message}\n\n"
                 "<RETRY_INSTRUCTION>\n"
                 "이전 응답은 JSON 파싱에 실패했습니다. 같은 스키마로 다시 작성하되 "
                 "반드시 완전한 JSON 객체 하나만 반환하세요. 문자열 값 안에는 실제 줄바꿈, "
