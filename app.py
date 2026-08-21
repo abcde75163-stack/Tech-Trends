@@ -85,12 +85,70 @@ if st.session_state.step == "input":
             st.error(result["confirmation_message"])
         else:
             st.session_state.confirmed_classification = result["classification"]
-            st.session_state.chapter_results = None
-            st.session_state.docx_buffer = None
             st.session_state.gen_error = None
-            st.session_state.auto_generate = True
             st.session_state.step = "generate"
-            st.rerun()
+
+            confirmed_context = dict(
+                tech_name=st.session_state.inputs["tech_name"],
+                scenario=result["scenario"],
+                org_name=st.session_state.inputs["org_name"],
+                org_capability=st.session_state.inputs["org_capability"],
+                attachment_summary=st.session_state.inputs.get("attachment_summary"),
+                classification=st.session_state.confirmed_classification,
+                purpose=st.session_state.inputs["purpose"],
+            )
+            confirmed_context["research_plan"] = build_research_plan(
+                confirmed_context["tech_name"],
+                confirmed_context["classification"],
+                confirmed_context.get("attachment_summary"),
+            )
+
+            st.info(f"자동 적용 시나리오: {config.SCENARIO_LABELS[confirmed_context['scenario']]}")
+            progress_bar = st.progress(0.0)
+            status_text = st.empty()
+
+            def on_progress(idx, total, label):
+                progress_bar.progress(idx / total * 0.7)
+                status_text.write(f"{idx}/{total} — {label} 생성 중...")
+
+            try:
+                from core.report_generator import run_all_calls
+                results = run_all_calls(confirmed_context, progress_callback=on_progress)
+                st.session_state.chapter_results = results
+
+                status_text.write("차트 6종 생성 중...")
+                progress_bar.progress(0.8)
+                from core.chart_generator import generate_all_charts
+                chart_images = generate_all_charts(results)
+
+                status_text.write("Word 문서 조립 중...")
+                progress_bar.progress(0.95)
+                from core.docx_builder import build_report_docx
+                import datetime
+                docx_buf = build_report_docx(
+                    tech_name=confirmed_context["tech_name"],
+                    purpose=confirmed_context["purpose"] or config.DEFAULT_PURPOSE,
+                    scenario_label=config.SCENARIO_LABELS[confirmed_context["scenario"]],
+                    date_str=datetime.date.today().strftime("%Y년 %m월"),
+                    chapter_results=results,
+                    chart_images=chart_images,
+                    confirmed_context=confirmed_context,
+                )
+                progress_bar.progress(1.0)
+                status_text.write("문서 생성 완료")
+                st.session_state.docx_buffer = docx_buf
+                fname = f"{confirmed_context['tech_name'].replace(' ', '_')}_기술동향분석.docx"
+                st.download_button(
+                    "📥 Word 문서 다운로드",
+                    data=st.session_state.docx_buffer,
+                    file_name=fname,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    type="primary",
+                    width='stretch',
+                )
+            except Exception as e:
+                st.session_state.gen_error = str(e)
+                st.error(f"보고서 생성 중 오류가 발생했습니다:\n\n{st.session_state.gen_error}")
 
 # =================================================================
 # 생성 화면: 챕터 생성 → 차트 → 문서 조립 → 다운로드
@@ -132,9 +190,7 @@ elif st.session_state.step == "generate":
             st.markdown("**논문/시장 검증 링크**")
             st.dataframe(plan["scholar_search_links"] + plan["market_search_links"], width='stretch')
 
-        should_generate = st.session_state.pop("auto_generate", False)
-        if not should_generate:
-            should_generate = st.button("보고서 다시 생성", type="primary", width='stretch')
+        should_generate = st.button("보고서 다시 생성", type="primary", width='stretch')
 
         if should_generate:
             st.session_state.gen_error = None
@@ -207,6 +263,6 @@ elif st.session_state.step == "generate":
 
     if st.button("← 처음부터 다시"):
         for k in ["step", "call1_result", "confirmed_classification", "chapter_results",
-                  "docx_buffer", "gen_error", "auto_generate"]:
+                  "docx_buffer", "gen_error"]:
             st.session_state.pop(k, None)
         st.rerun()
